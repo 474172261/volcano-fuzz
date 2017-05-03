@@ -4,16 +4,6 @@ Cmds=""
 def FormatCmd(base,type,addr,data):
   return struct.pack("<B",(base)<<4|type)+struct.pack("<I",addr)+data
 
-mapped=[-1,-1,-1]
-def IoMap(addr,size=4,mapi=0,lock='l'):
-  global Cmds
-  if mapi>=3:
-    print "iomap num too big!"
-  if mapped[mapi] == -1:
-    mapped[mapi]=mapi
-    mapi=mapi+1
-    Cmds+= lock+FormatCmd(mapi+0xa,0xa,addr,struct.pack("<I",size))
-
 def WritePort(port,data,size=4,lock='u'):
   global Cmds
   Cmds+= lock+FormatCmd(size,0,port,struct.pack("<I",data))

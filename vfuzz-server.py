@@ -12,7 +12,6 @@ import os
 def FormatCmd(base,type,addr,data):
   return struct.pack("<B",(base)<<4|type)+struct.pack("<I",addr)+data
 
-Cmds=""
 # 由调用者负责处理是否重复map
 def IoMap(addr,size=4,mapi=0,lock='l'):
   global Cmds
@@ -113,6 +112,9 @@ class LogListener(threading.Thread):
           con.close()
 
   def getScore(self):
+    global NOGDB
+    if NOGDB:
+      print self.log_list
     (pre_score,score)=checkpoint_analyze.getCovScore(self.log_list)
     print 'pre score is:%scur score is:%s'%(pre_score,score)
     self.log_list=[]
@@ -245,7 +247,6 @@ class SocketServer(threading.Thread):
       each.stop()
     self.stopped=True
 
-pid_in_use={}
 def GetQemuPid():
   p=Popen('ps -al|grep "qemu"',stdout=PIPE,shell=True)
   pids=p.communicate()[0].split('\n')
@@ -263,12 +264,14 @@ def GetQemuPid():
     p.kill()
   return pid
 
-QUIT=False
 def Debugger(memsize,imgpath,cmd):
   print "qemu-system-x86_64 --enable-kvm"+" -m "+memsize+" -hda "+imgpath+" "+cmd
   qemu=Popen("qemu-system-x86_64 --enable-kvm"+" -m "+memsize+" -hda "+imgpath+" "+cmd,stdout=PIPE,stderr=STDOUT,shell=True)
   pid=GetQemuPid()
   print "qemu:"+pid
+  global NOGDB
+  if NOGDB:
+    exit(0)
   qemuDbg=Popen("""gdb -q\
     -ex "c" \
     -ex "disass $pc" \
@@ -303,15 +306,21 @@ def Usage():
     print "-m memsize,like: -m 2048"
     print '-i imgpath,like: -i /home/vv/centos.img'
     print '-c command,like: -c "-device usb-ehci"'
+    print '--nogdb   ,disable gdb attach'
     sys.exit(-1)
 
+NOGDB=False
+Cmds=""
+QUIT=False
+pid_in_use={}
 if __name__=="__main__":
   memsize=''
   imgpath=''
   cmd=''
   random.seed()
+  NOGDB=False
   try:  
-    opts, args = getopt.getopt(sys.argv[1:], "m:i:c:")
+    opts, args = getopt.getopt(sys.argv[1:], "m:i:c:",['nogdb'])
     for o,a in opts:
       if o=='-m':
         memsize=a 
@@ -319,6 +328,8 @@ if __name__=="__main__":
         imgpath=a 
       elif o=='-c':
         cmd=a 
+      elif o=='--nogdb':
+        NOGDB=True
       else:
         print "error cmd"
         Usage()

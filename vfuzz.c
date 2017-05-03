@@ -25,6 +25,7 @@ void * mymalloc(int size){
     return 0;
   }
   u64 memaddr=(u64)mymem+off;
+  memset(memaddr,0,size);
   off+=size;
   return (void *)memaddr;
 }
