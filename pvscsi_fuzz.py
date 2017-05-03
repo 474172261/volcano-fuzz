@@ -90,6 +90,8 @@ def runCmds():
     cmd_setup_msg_ring()
 
 def pvscsiFuzz():
+  global Cmds
+  Cmds="" # clean every time
   cases=(0,4,0x3014,0x4018)#0x100c,0x2010,
   off=cases[Ri(3)]
   if off<5:

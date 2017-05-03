@@ -187,9 +187,9 @@ class Fuzzer(threading.Thread):
     log_analyze_thread=LogListener()
     log_analyze_thread.start()
     Cmds=""
-    while True:
     IoMap(0xfebf0000,0x8000)
     IoMap(0xeb000,0x200,mapi=1)
+    while True:
       Cmds+=pvscsi_fuzz.pvscsiFuzz()
       self.sendCmds()
       time.sleep(2)
