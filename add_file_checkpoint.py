@@ -34,7 +34,8 @@ check_function=\
 '  address.sun_family=AF_UNIX;\n'\
 '  strcpy(address.sun_path,"./local_socket");\n'\
 '  int result=connect(sockfd,(struct sockaddr*)&address,sizeof(address));\n'\
-'  write(sockfd,buf,strlen(buf));\n'\
+'  if(result>=0)'\
+'    write(sockfd,buf,strlen(buf));\n'\
 '  close(sockfd);\n'\
 '}\n'
 check_list=[]

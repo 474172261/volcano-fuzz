@@ -31,7 +31,7 @@ class Accepter(threading.Thread):
         print 'send or get fail!'
         exit(-1)
       # print len(data)
-      print data.encode('hex')
+      # print data.encode('hex')
       Translate(data)
     print '\nClient exit!'
 

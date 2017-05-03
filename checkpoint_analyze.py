@@ -1,62 +1,103 @@
 from __future__ import division
+import threading
+import socket
 import os
-def getCovScore(log_list):
-  check_list={}
-  score='0'
-  with open('check_list','r') as cfp:
-    data=cfp.readline()
-    check_list[data]=0
-    while data:
-      # if 'f:' in data:
-      #   data=cfp.readline()
-        # continue
-      data=cfp.readline()
-      check_list[data]=0
+import sys
 
-  for each in log_list:
-    if check_list.has_key(each):
-      check_list[each]+=1
-  empty_list=[]
-  trigger_list=[]
-  for i in check_list:
-    if check_list[i] == 0:
-      empty_list.append(i)
-    else:
-      trigger_list.append(i)
-  empty_list.sort()
-  trigger_list.sort()
-  pre_efp=0
-  try:
-    pre_efp=open('empty_list','rb')
-  except:
+class LogListener(threading.Thread):
+  def __init__(self): 
+    super(LogListener, self).__init__()
+    self.log_addr='./local_socket'
+    self.log_list=[]
+    self.trigger_list=[]
+    self.stopped=False
+    self.pre_score='0\n'
+    self.score='0\n'
+    self.check_list={}
+    self.timer=1
+
+  def getCovScore(self):
+    score='0'
+    if self.check_list=={}: 
+      with open('check_list','r') as cfp:
+        data=cfp.readline()
+        self.check_list[data]=0
+        while data:
+          data=cfp.readline()
+          self.check_list[data]=0
+    #count checkpoint
+    for each in self.log_list:
+      if self.check_list.has_key(each):
+        self.check_list[each]+=1
+    #count empty point,and new point
+    new_trigger_list=[]
+    empty_list=[]
+    for i in self.check_list:
+      if self.check_list[i] != 0:
+        if not self.trigger_list.count(i):
+          self.trigger_list.append(i)
+          new_trigger_list.append(i)
+      else:
+        if not self.trigger_list.count(i):
+          empty_list.append(i)
+    try:
+      pre_efp=open('empty_list','rb')
+      pre_efp.close()
+      self.pre_score=self.score
+    except:
+      self.pre_score='0\n'
+
+    # print "new nodes:"
+    # for i in new_trigger_list:
+    #   print i,
+    # print "new count:",len(new_trigger_list)
+
     efp=open('empty_list','wb')
-    score=str(len(trigger_list)*100/len(check_list))[:4]+'%\n'
-    efp.write(score)
+    self.score=str(len(self.trigger_list)*100/len(self.check_list))[:4]+'%\n'
+    efp.write(self.score)
+    empty_list.sort()
     for i in empty_list:
       efp.write(i)
       # print i,
     efp.close()
-  pre_empty_list=[]
-  pre_score='0\n'
-  if pre_efp:
-    data=pre_efp.readline()
-    pre_score=data
-    while data:
-      data=pre_efp.readline()
-      pre_empty_list.append(data)
-    print 'new nodes:'
-    new_node_count=0
-    for i in trigger_list:
-      if pre_empty_list.count(i):
-        print i,
-        new_node_count+=1
-    print 'new nodes count:%d'%(new_node_count)
-    os.remove('empty_list')
-    efp=open('empty_list','wb')
-    score=str(len(trigger_list)*100/len(check_list))[:4]+'%\n'
-    efp.write(score)
-    for i in empty_list:
-      efp.write(i)
-      # print i,
-    efp.close()
-  return (pre_score,score)
+
+  def run(self):
+    try:
+      os.unlink(self.log_addr)
+    except OSError:
+      if os.path.exists(self.log_addr):
+        raise
+    sock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+    sock.bind(self.log_addr)
+    sock.listen(1)
+    sock.settimeout(0.1)
+    threading.Timer(2,self.timerPrintSocre).start()
+    while not self.stopped:
+      try:
+        con,client_addr=sock.accept()
+      except socket.timeout:
+        continue
+      while True:
+        data=con.recv(10)
+        if data:
+          self.log_list.append(data)
+          break
+      con.close()
+    print 'LogListener exit!'
+
+  def stop(self):
+    self.timer=0
+    self.stopped=True
+
+  def timerPrintSocre(self):
+    if self.timer:
+      self.timer+=1
+      sys.__stdout__.write('\rpre_score:'+self.pre_score[:-1]+',cur_score:'+self.score[:-1]+\
+        ' times:'+str(self.timer)+' ')
+      sys.__stdout__.flush()
+      threading.Timer(2,self.timerPrintSocre).start()
+
+  def getScore(self):
+    self.getCovScore()
+    self.log_list=[]
+    return self.score

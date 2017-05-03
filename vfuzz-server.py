@@ -84,56 +84,13 @@ def byteRemovals(isdata=False):
     len_remove=Ri(int(len_cmd*0.1))# 移除的命令最多占10%
     Cmds=Cmds[:pos*10]+Cmds[pos*10+len_remove*10:]
 
-class LogListener(threading.Thread):
-  def __init__(self): 
-    super(LogListener, self).__init__()
-    self.log_addr='./local_socket'
-    self.log_list=[]
-    self.stopped=False
-
-  def run(self):
-    try:
-      os.unlink(self.log_addr)
-    except OSError:
-      if os.path.exists(self.log_addr):
-        raise
-    sock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
-    sock.bind(self.log_addr)
-    sock.listen(1)
-    sock.settimeout(0.1)
-    while not self.stopped:
-      try:
-        con,client_addr=sock.accept()
-      except socket.timeout:
-        continue
-      try:
-        while True:
-          data=con.recv(10)
-          if data:
-            self.log_list.append(data)
-            break
-      finally:
-        con.close()
-    print 'LogListener exit!'
-
-  def stop(self):
-    self.stopped=True
-
-  def getScore(self):
-    global NOGDB
-    if NOGDB:
-      print self.log_list
-    (pre_score,score)=checkpoint_analyze.getCovScore(self.log_list)
-    print 'pre score is:%scur score is:%s'%(pre_score,score)
-    self.log_list=[]
-
 class Fuzzer(threading.Thread):
   def __init__(self,id,c=None):
     super(Fuzzer, self).__init__()
     self.client=c
     self.stopped=False
     self.client_id=id
-    self.loglistener=LogListener()
+    self.loglistener=checkpoint_analyze.LogListener()
 
   def sendCmd(self,data):
     try:
@@ -142,6 +99,7 @@ class Fuzzer(threading.Thread):
     except socket.error:
       print 'sendCmd fail!\nclose thread %d'%(self.client_id)
       print 'Fuzzer exit!'
+      self.loglistener.stop()
       self.client.close()
       exit(-1)
 
@@ -202,7 +160,7 @@ class Fuzzer(threading.Thread):
     while not self.stopped:
       Cmds+=pvscsi_fuzz.pvscsiFuzz()
       self.sendCmds()
-      time.sleep(2)
+      time.sleep(0.1)
       self.loglistener.getScore()
       Cmds=""
     self.loglistener.stop()
@@ -216,6 +174,7 @@ class Fuzzer(threading.Thread):
     #   time.sleep(2)
 
   def stop(self):
+    print 'wanna stop fuzzer'
     self.stopped=True
 
 class SocketServer(threading.Thread):
@@ -245,15 +204,16 @@ class SocketServer(threading.Thread):
       except socket.timeout:
         continue  
       print 'accept a fuzzer at port %d'%(addr[1])
-      thread=Fuzzer(ids,client)
+      fuzzer=Fuzzer(ids,client)
       ids+=1
-      self.clients.append(thread)
-      thread.start()
+      self.clients.append(fuzzer)
+      fuzzer.start()
     print "Server stopped"
 
   def stop(self):
     for each in self.clients: 
-      each.stop()
+      if each.isAlive():
+        each.stop()
     self.stopped=True
 
 def GetQemuPid():
@@ -273,38 +233,46 @@ def GetQemuPid():
     p.kill()
   return pid
 
-def Debugger(memsize,imgpath,cmd):
-  print "qemu-system-x86_64 --enable-kvm"+" -m "+memsize+" -hda "+imgpath+" "+cmd
-  qemu=Popen("qemu-system-x86_64 --enable-kvm"+" -m "+memsize+" -hda "+imgpath+" "+cmd,stdout=PIPE,stderr=STDOUT,shell=True)
-  pid=GetQemuPid()
-  print "qemu:"+pid
-  global NOGDB
-  if NOGDB:
-    exit(0)
-  qemuDbg=Popen("""gdb -q\
-    -ex "c" \
-    -ex "disass $pc" \
-    -ex "i register" \
-    -ex "bt" \
-    -ex "set confirm off" \
-    -ex "kill" \
-    -ex "q" \
-    --pid """+pid+" 2>&1",stdout=PIPE,stderr=STDOUT,shell=True)
-  debuginfo=qemuDbg.communicate()[0]
-  pid_in_use.pop(pid)
-  print qemu.poll()
-  if qemu.poll()==None:
-    qemu.kill()
-  print qemuDbg.poll()
-  if qemuDbg.poll()==None:
-    qemuDbg.kill()
-  print debuginfo[-30:]
-  Quit()
-  if debuginfo[-30:]=='The program is not being run.\n':
-    return -1
-  fp=open("crash-dump_"+time.strftime('%Y-%m-%d-%H:%M:%S',time.localtime(time.time())),'w+')
-  fp.write(debuginfo)
-  fp.close()
+class Debugger(threading.Thread):
+  def __init__(self,memsize,imgpath,cmd):
+    super(Debugger, self).__init__()
+    self.memsize=memsize
+    self.imgpath=imgpath 
+    self.cmd=cmd 
+
+  def run(self):
+    print "qemu-system-x86_64 --enable-kvm"+" -m "+self.memsize+" -hda "+self.imgpath+" "+self.cmd+'\n'
+    qemu=Popen("qemu-system-x86_64 --enable-kvm"+" -m "+self.memsize+" -hda "+\
+                self.imgpath+" "+self.cmd,stdout=PIPE,stderr=STDOUT,shell=True)
+    pid=GetQemuPid()
+    print "qemu:"+pid
+    global NOGDB
+    if NOGDB:
+      exit(0)
+    qemuDbg=Popen("""gdb -q\
+      -ex "c" \
+      -ex "disass $pc" \
+      -ex "i register" \
+      -ex "bt" \
+      -ex "set confirm off" \
+      -ex "kill" \
+      -ex "q" \
+      --pid """+pid+" 2>&1",stdout=PIPE,stderr=STDOUT,shell=True)
+    debuginfo=qemuDbg.communicate()[0]
+    pid_in_use.pop(pid)
+    print qemu.poll()
+    if qemu.poll()==None:
+      qemu.kill()
+    print qemuDbg.poll()
+    if qemuDbg.poll()==None:
+      qemuDbg.kill()
+    print debuginfo[-30:]
+    Quit()
+    if debuginfo[-30:]=='The program is not being run.\n':
+      return -1
+    fp=open("crash-dump_"+time.strftime('%Y-%m-%d-%H:%M:%S',time.localtime(time.time())),'w+')
+    fp.write(debuginfo)
+    fp.close()
 
 def Quit():
   global QUIT
@@ -315,6 +283,7 @@ def Usage():
     print "-m memsize,like: -m 2048"
     print '-i imgpath,like: -i /home/vv/centos.img'
     print '-c command,like: -c "-device usb-ehci"'
+    print '-p port,like -p 8088'
     print '--nogdb   ,disable gdb attach'
     sys.exit(-1)
 
@@ -328,8 +297,9 @@ if __name__=="__main__":
   cmd=''
   random.seed()
   NOGDB=False
+  port=8088
   try:  
-    opts, args = getopt.getopt(sys.argv[1:], "m:i:c:",['nogdb'])
+    opts, args = getopt.getopt(sys.argv[1:], "m:i:c:p:",['nogdb'])
     for o,a in opts:
       if o=='-m':
         memsize=a 
@@ -337,6 +307,8 @@ if __name__=="__main__":
         imgpath=a 
       elif o=='-c':
         cmd=a 
+      elif o=='-p':
+        port=int(a)
       elif o=='--nogdb':
         NOGDB=True
       else:
@@ -348,15 +320,12 @@ if __name__=="__main__":
   if memsize=='' or imgpath=='':
     print "no input!"
     Usage()
-  server=SocketServer()
+  server=SocketServer(port)
   server.start()
-  thread=threading.Thread(target=Debugger,args=(memsize, imgpath, cmd))
-  thread.start()
+  dbg=Debugger(memsize, imgpath, cmd)
+  dbg.start()
   try:
     while not QUIT:pass
   except KeyboardInterrupt:
     print "keyboard quit!"
   server.stop()
-  # print "rs for restart server"
-  # cmd=raw_input('>')
-  # if cmd=='rs'
