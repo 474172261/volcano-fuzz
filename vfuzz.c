@@ -41,13 +41,13 @@ typedef struct {
     switch(head->type&0xf0){\
       case 0x10:\
         if(DEBUG)\
-          printk("ioMaddr:%llx,data:%8x\n",head->addr+Base,head->senddata);\
+          printk("ioMaddr:%p,data:%8x\n",head->addr+Base,head->senddata);\
         else\
           writeb(head->senddata,head->addr+Base);\
         break;\
       case 0x40:\
         if(DEBUG)\
-          printk("ioMaddr:%llx,data:%8x\n",head->addr+Base,head->senddata);\
+          printk("ioMaddr:%p,data:%8x\n",head->addr+Base,head->senddata);\
         else\
           writel(head->senddata,head->addr+Base);\
         break;\

@@ -31,6 +31,7 @@ check_function=\
 'void check_point(const char *buf){\n'\
 '  int sockfd=socket(AF_UNIX,SOCK_STREAM,0);\n'\
 '  struct sockaddr_un address;\n'\
+'  address.sun_family=AF_UNIX;\n'\
 '  strcpy(address.sun_path,"./local_socket");\n'\
 '  int result=connect(sockfd,(struct sockaddr*)&address,sizeof(address));\n'\
 '  write(sockfd,buf,strlen(buf));\n'\

@@ -89,6 +89,7 @@ class LogListener(threading.Thread):
     super(LogListener, self).__init__()
     self.log_addr='./local_socket'
     self.log_list=[]
+    self.stopped=False
 
   def run(self):
     try:
@@ -99,17 +100,24 @@ class LogListener(threading.Thread):
     sock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
     sock.bind(self.log_addr)
     sock.listen(1)
-    while True:
-      while True:
+    sock.settimeout(0.1)
+    while not self.stopped:
+      try:
         con,client_addr=sock.accept()
-        try:
-          while True:
-            data=con.recv(10)
-            if data:
-              self.log_list.append(data)
-              break
-        finally:
-          con.close()
+      except socket.timeout:
+        continue
+      try:
+        while True:
+          data=con.recv(10)
+          if data:
+            self.log_list.append(data)
+            break
+      finally:
+        con.close()
+    print 'LogListener exit!'
+
+  def stop(self):
+    self.stopped=True
 
   def getScore(self):
     global NOGDB
@@ -125,14 +133,15 @@ class Fuzzer(threading.Thread):
     self.client=c
     self.stopped=False
     self.client_id=id
+    self.loglistener=LogListener()
 
   def sendCmd(self,data):
     try:
       self.client.sendall(data)
       self.client.recv(1)
     except socket.error:
-
       print 'sendCmd fail!\nclose thread %d'%(self.client_id)
+      print 'Fuzzer exit!'
       self.client.close()
       exit(-1)
 
@@ -186,17 +195,17 @@ class Fuzzer(threading.Thread):
     count=0
     print 'thread %d connect in.'%(self.client_id)
     global Cmds
-    log_analyze_thread=LogListener()
-    log_analyze_thread.start()
+    self.loglistener.start()
     Cmds=""
     IoMap(0xfebf0000,0x8000)
     IoMap(0xeb000,0x200,mapi=1)
-    while True:
+    while not self.stopped:
       Cmds+=pvscsi_fuzz.pvscsiFuzz()
       self.sendCmds()
       time.sleep(2)
-      log_analyze_thread.getScore()
+      self.loglistener.getScore()
       Cmds=""
+    self.loglistener.stop()
     print "Fuzzer Stopped!"
     # if self.sendCmd(IoMap(0xfeba0000,0x800))==None:
     #   exit(-1)
@@ -235,7 +244,7 @@ class SocketServer(threading.Thread):
         (client,addr)=self.server.accept()
       except socket.timeout:
         continue  
-      print 'accept addr %s at port %d'%(addr[0],addr[1])
+      print 'accept a fuzzer at port %d'%(addr[1])
       thread=Fuzzer(ids,client)
       ids+=1
       self.clients.append(thread)
@@ -339,10 +348,10 @@ if __name__=="__main__":
   if memsize=='' or imgpath=='':
     print "no input!"
     Usage()
-  thread=threading.Thread(target=Debugger,args=(memsize, imgpath, cmd))
-  thread.start()
   server=SocketServer()
   server.start()
+  thread=threading.Thread(target=Debugger,args=(memsize, imgpath, cmd))
+  thread.start()
   try:
     while not QUIT:pass
   except KeyboardInterrupt:
