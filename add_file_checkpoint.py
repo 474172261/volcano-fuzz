@@ -26,10 +26,15 @@ POINT_FUNCS=[
 KEYWORD={"while":0,"for":0,'fprintf':0,'if':0,'switch':0,'DPRINTF':0,'BADF':0,'sizeof':0,'check_point':0}
 check_func="check_point("
 check_function=\
-'inline void check_point(const char *buf){\n'+\
-' int fp = open("/vm-images/log", O_WRONLY|O_APPEND|O_CREAT,0644);\n'\
-' write(fp,buf,strlen(buf));\n'+\
-' close(fp);\n'+\
+'#include <sys/socket.h>\n'\
+'#include <sys/un.h>\n'\
+'void check_point(const char *buf){\n'\
+'  int sockfd=socket(AF_UNIX,SOCK_STREAM,0);\n'\
+'  struct sockaddr_un address;\n'\
+'  strcpy(address.sun_path,"./local_socket");\n'\
+'  int result=connect(sockfd,(struct sockaddr*)&address,sizeof(address));\n'\
+'  write(sockfd,buf,strlen(buf));\n'\
+'  close(sockfd);\n'\
 '}\n'
 check_list=[]
 
@@ -45,7 +50,7 @@ def splitFile(filename):
     while data:
       #print data,'1'
       if '//start' in data:
-        datas+='inline void check_point(const char *buf);\n'
+        datas+='void check_point(const char *buf);\n'
         data=fp.readline()
         break
       else:

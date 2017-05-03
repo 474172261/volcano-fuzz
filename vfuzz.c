@@ -104,7 +104,7 @@ ssize_t writeCallback( struct file *filp,const char __user *buff,unsigned long l
     return -EFAULT;
   }
   int i=0,temp=0;
-  if(DEBUG>1){
+  if(DEBUG>2){
     printk("in %x:",len);
     for(i=0;i<len;i++){
       printk("%2x ",*((unsigned char *)userdata+i));

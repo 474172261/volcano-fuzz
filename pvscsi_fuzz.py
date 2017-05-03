@@ -43,7 +43,6 @@ def cmd_setup_rings():
     WriteMem(4, Ri(0xffffffff))#high
 
 def processIO():
-  IoMap(0xeb000,0x200,mapi=1)
   WriteMem(0,2,base=1)# set 0xeb000=2
   WriteMem(0x4018, 0)
 
@@ -92,7 +91,6 @@ def runCmds():
 
 def pvscsiFuzz():
   cases=(0,4,0x3014,0x4018)#0x100c,0x2010,
-  IoMap(0xfebf0000,0x8000)
   off=cases[Ri(3)]
   if off<5:
     runCmds()

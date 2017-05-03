@@ -1,6 +1,6 @@
 from __future__ import division
 import os
-def getCovScore():
+def getCovScore(log_list):
   check_list={}
   score='0'
   with open('check_list','r') as cfp:
@@ -13,20 +13,9 @@ def getCovScore():
       data=cfp.readline()
       check_list[data]=0
 
-  try:
-    with open('log','rb') as fp:
-      data=fp.readline()
-      while data:
-        # if 'f:' in data:
-        #   data=fp.readline()
-        #   continue
-        if check_list.has_key(data):
-          check_list[data]+=1
-        data=fp.readline()
-  except:
-    print 'No log file!'
-    exit(0)
-  os.remove('log')
+  for each in log_list:
+    if check_list.has_key(each):
+      check_list[each]+=1
   empty_list=[]
   trigger_list=[]
   for i in check_list:
@@ -71,6 +60,3 @@ def getCovScore():
       # print i,
     efp.close()
   return (pre_score,score)
-if __name__ == '__main__':
-  (pre_score,score)=getCovScore()
-  print 'pre score is:%scur score is:%s'%(pre_score,score)

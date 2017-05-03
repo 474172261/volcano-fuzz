@@ -7,20 +7,16 @@ import threading
 import struct
 import random
 import pvscsi_fuzz
-
+import checkpoint_analyze
+import os
 def FormatCmd(base,type,addr,data):
   return struct.pack("<B",(base)<<4|type)+struct.pack("<I",addr)+data
 
 Cmds=""
-mapped=[-1,-1,-1]
+# 由调用者负责处理是否重复map
 def IoMap(addr,size=4,mapi=0,lock='l'):
   global Cmds
-  if mapi>=3:
-    print "iomap num too big!"
-  if mapped[mapi] == -1:
-    mapped[mapi]=mapi
-    mapi=mapi+1
-    Cmds+= lock+FormatCmd(mapi+0xa,0xa,addr,struct.pack("<I",size))
+  Cmds+= lock+FormatCmd(mapi+0xa,0xa,addr,struct.pack("<I",size))
 
 def WritePort(port,data,size=4,lock='u'):
   global Cmds
@@ -89,6 +85,38 @@ def byteRemovals(isdata=False):
     len_remove=Ri(int(len_cmd*0.1))# 移除的命令最多占10%
     Cmds=Cmds[:pos*10]+Cmds[pos*10+len_remove*10:]
 
+class LogListener(threading.Thread):
+  def __init__(self): 
+    super(LogListener, self).__init__()
+    self.log_addr='./local_socket'
+    self.log_list=[]
+
+  def run(self):
+    try:
+      os.unlink(self.log_addr)
+    except OSError:
+      if os.path.exists(self.log_addr):
+        raise
+    sock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+    sock.bind(self.log_addr)
+    sock.listen(1)
+    while True:
+      while True:
+        con,client_addr=sock.accept()
+        try:
+          while True:
+            data=con.recv(10)
+            if data:
+              self.log_list.append(data)
+              break
+        finally:
+          con.close()
+
+  def getScore(self):
+    (pre_score,score)=checkpoint_analyze.getCovScore(self.log_list)
+    print 'pre score is:%scur score is:%s'%(pre_score,score)
+    self.log_list=[]
+
 class Fuzzer(threading.Thread):
   def __init__(self,id,c=None):
     super(Fuzzer, self).__init__()
@@ -101,6 +129,7 @@ class Fuzzer(threading.Thread):
       self.client.sendall(data)
       self.client.recv(1)
     except socket.error:
+
       print 'sendCmd fail!\nclose thread %d'%(self.client_id)
       self.client.close()
       exit(-1)
@@ -122,7 +151,7 @@ class Fuzzer(threading.Thread):
       exit(-1)
     for i in range(len(Cmds)/10):
       cmd=Cmds[i*10+1:i*10+10]
-      self.sendcmd(cmd)
+      self.sendCmd(cmd)
 
   def initCmd(self):
     global Cmds
@@ -153,10 +182,20 @@ class Fuzzer(threading.Thread):
       print "No socket client!"
       exit(-1)
     count=0
-    print 'thread %d:connect in.'%(self.client_id)
+    print 'thread %d connect in.'%(self.client_id)
     global Cmds
-    Cmds=pvscsi_fuzz.pvscsiFuzz()
-    self.sendCmds()
+    log_analyze_thread=LogListener()
+    log_analyze_thread.start()
+    Cmds=""
+    while True:
+    IoMap(0xfebf0000,0x8000)
+    IoMap(0xeb000,0x200,mapi=1)
+      Cmds+=pvscsi_fuzz.pvscsiFuzz()
+      self.sendCmds()
+      time.sleep(2)
+      log_analyze_thread.getScore()
+      Cmds=""
+    print "Fuzzer Stopped!"
     # if self.sendCmd(IoMap(0xfeba0000,0x800))==None:
     #   exit(-1)
     # while not self.stopped:
@@ -262,7 +301,7 @@ def Quit():
 def Usage():  
     print "Usage:vfuzz [-m|-i|-c] args...."
     print "-m memsize,like: -m 2048"
-    print '-i imgpath,like: -i "/home/vv/centos.img"'
+    print '-i imgpath,like: -i /home/vv/centos.img'
     print '-c command,like: -c "-device usb-ehci"'
     sys.exit(-1)
 
