@@ -5,7 +5,7 @@ import os
 import sys
 
 class LogListener(threading.Thread):
-  def __init__(self): 
+  def __init__(self,runtype): 
     super(LogListener, self).__init__()
     self.log_addr='./local_socket'
     self.log_list=[]
@@ -15,6 +15,7 @@ class LogListener(threading.Thread):
     self.score='0\n'
     self.check_list={}
     self.timer=1
+    self.runtype=runtype
 
   def getCovScore(self):
     score='0'
@@ -81,6 +82,8 @@ class LogListener(threading.Thread):
         data=con.recv(10)
         if data:
           self.log_list.append(data)
+          if self.runtype:
+            print data
           break
       con.close()
     print 'LogListener exit!'

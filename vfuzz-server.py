@@ -6,7 +6,6 @@ import socket
 import threading
 import struct
 import random
-import pvscsi_fuzz
 import checkpoint_analyze
 import os
 def FormatCmd(base,type,addr,data):
@@ -85,12 +84,14 @@ def byteRemovals(isdata=False):
     Cmds=Cmds[:pos*10]+Cmds[pos*10+len_remove*10:]
 
 class Fuzzer(threading.Thread):
-  def __init__(self,id,c=None):
+  def __init__(self,id,c=None,runtype=0):
     super(Fuzzer, self).__init__()
     self.client=c
     self.stopped=False
     self.client_id=id
-    self.loglistener=checkpoint_analyze.LogListener()
+    self.loglistener=checkpoint_analyze.LogListener(runtype)
+    self.runtype=runtype
+#TYPE={"RUNFUZZER":0,"RUNEXAMPLE":1}
 
   def sendCmd(self,data):
     try:
@@ -151,12 +152,8 @@ class Fuzzer(threading.Thread):
     fp.write(Cmds)
     fp.close()
 
-  def run(self):
-    if self.client==None:
-      print "No socket client!"
-      exit(-1)
-    count=0
-    print 'thread %d connect in.'%(self.client_id)
+  def moduleFuzzer(self):
+    import pvscsi_fuzz
     global Cmds
     self.loglistener.start()
     Cmds=""
@@ -169,7 +166,26 @@ class Fuzzer(threading.Thread):
       time.sleep(0.1)
       self.loglistener.getScore()
       Cmds=""
-    self.loglistener.stop()
+
+  def run(self):
+    if self.client==None:
+      print "No socket client!"
+      exit(-1)
+    count=0
+    print 'thread %d connect in.'%(self.client_id)  
+    if self.runtype==0:
+      self.moduleFuzzer()
+    elif self.runtype==1:
+      fp=open('last_one_cmds','rb')
+      data=fp.read(1024)
+      Cmds=data
+      while data:
+        data=fp.read(1024)
+        Cmds+=data
+      self.sendCmds()
+      print 'send last_one_cmds done'
+    else:
+      print 'Fuzzer:unknow type!'
     print "Fuzzer Stopped!"
     # if self.sendCmd(IoMap(0xfeba0000,0x800))==None:
     #   exit(-1)
@@ -181,6 +197,7 @@ class Fuzzer(threading.Thread):
 
   def stop(self):
     print 'wanna stop fuzzer'
+    self.loglistener.stop()
     self.stopped=True
 
 class SocketServer(threading.Thread):
@@ -210,7 +227,8 @@ class SocketServer(threading.Thread):
       except socket.timeout:
         continue  
       print 'accept a fuzzer at port %d'%(addr[1])
-      fuzzer=Fuzzer(ids,client)
+      runtype=client.recv(1)
+      fuzzer=Fuzzer(ids,client,int(runtype))
       ids+=1
       self.clients.append(fuzzer)
       fuzzer.start()
@@ -257,7 +275,7 @@ class Debugger(threading.Thread):
       exit(0)
     qemuDbg=Popen("""gdb -q\
       -ex "c" \
-      -ex "disass $pc" \
+      -ex "x/10i $pc" \
       -ex "i register" \
       -ex "bt" \
       -ex "set confirm off" \
@@ -289,7 +307,7 @@ def Usage():
     print "-m memsize,like: -m 2048"
     print '-i imgpath,like: -i /home/vv/centos.img'
     print '-c command,like: -c "-device usb-ehci"'
-    print '-p port,like -p 8088'
+    print '-p port,like -p 8088.DEFAULT:8088'
     print '--nogdb   ,disable gdb attach'
     sys.exit(-1)
 

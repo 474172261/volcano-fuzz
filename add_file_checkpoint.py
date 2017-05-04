@@ -99,7 +99,6 @@ def splitFile(filename):
               continue
           ibrace=0
           index=data.index('{')
-          check_list.append('f:'+str(ifunc)+"\n")
           # data=data[:index+1]+'check_point("f:'+str(ifunc)+'\\n");'+data[index+1:]
           funcline+=data 
           data=fp.readline()
@@ -201,9 +200,10 @@ def pointFunc():
             if funcname not in POINT_FUNCS and full_func_list.has_key(funcname):
               POINT_FUNCS.append(funcname)
           r=re.search('\w+\(',funcline[end:])
-      # only add need func for point
+      # only add needed func for point
       r=re.search('{',funcline)
       end=r.span()[1]
+      check_list.append('f:'+str(ifunc)+"\n")
       newfuncline=funcline[:end]+'check_point("f:'+str(ifunc)+'\\n");'+funcline[end:]
       file_lines[index]=newfuncline
       # print newfuncline
@@ -298,6 +298,7 @@ if __name__=="__main__":
   pointFunc()
   addBranchPoint()
   storeFile(FILENAME+'.c')
+  check_list.sort()
   with open('check_list','wb') as fp:
     for i in check_list:
       fp.write(i)

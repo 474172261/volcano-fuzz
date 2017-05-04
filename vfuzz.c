@@ -7,7 +7,7 @@
 #include <asm/uaccess.h>
 #include <linux/slab.h>
 
-#define DEBUG 1
+#define DEBUG 0
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("vfuzz Kernel Module");
 MODULE_AUTHOR("VictorV");
@@ -142,6 +142,8 @@ ssize_t writeCallback( struct file *filp,const char __user *buff,unsigned long l
       mapBase[temp]=(u64)ioremap(head->addr,head->senddata);
       printk("map:0x%8x result:%llx\n",head->addr,mapBase[temp]);
       break;
+    case 0xb:
+    
     default:
       printk("Error:bad case!\n");
       return -1;
