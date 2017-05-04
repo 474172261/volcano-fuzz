@@ -146,6 +146,11 @@ class Fuzzer(threading.Thread):
       WriteMem(4,0xffffffff)
     self.sendCmds()
 
+  def storeCmds(self):
+    fp=open('last_one_cmds','wb')
+    fp.write(Cmds)
+    fp.close()
+
   def run(self):
     if self.client==None:
       print "No socket client!"
@@ -160,6 +165,7 @@ class Fuzzer(threading.Thread):
     while not self.stopped:
       Cmds+=pvscsi_fuzz.pvscsiFuzz()
       self.sendCmds()
+      self.storeCmds()
       time.sleep(0.1)
       self.loglistener.getScore()
       Cmds=""
