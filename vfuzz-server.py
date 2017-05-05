@@ -24,9 +24,9 @@ def WriteMem(offset,data,base=0,size=4,lock='u'):
   global Cmds
   Cmds+= lock+FormatCmd(size,base+3,offset,struct.pack("<I",data))
 
-def WriteCopy(offset,data,base=0,lock='u'):
+def WriteCopy(offset,len,data,base=0,lock='u'):
   global Cmds
-  Cmds+= lock+FormatCmd(0,base+6,offset,data)
+  Cmds+= lock+FormatCmd(0,base+6,offset,struct.pack("<I",len)+data)
 
 def Ri(max,min=0):
   return random.randint(min,max)
@@ -155,7 +155,6 @@ class Fuzzer(threading.Thread):
   def moduleFuzzer(self):
     import pvscsi_fuzz
     global Cmds
-    self.loglistener.start()
     Cmds=""
     IoMap(0xfebf0000,0x8000)
     IoMap(0xeb000,0x200,mapi=1)
@@ -173,12 +172,16 @@ class Fuzzer(threading.Thread):
       exit(-1)
     count=0
     print 'thread %d connect in.'%(self.client_id)  
+    self.loglistener.start()
     if self.runtype==0:
       self.moduleFuzzer()
     elif self.runtype==1:
       fp=open('last_one_cmds','rb')
       data=fp.read(1024)
-      Cmds=data
+      global Cmds
+      IoMap(0xfebf0000,0x8000)
+      IoMap(0xeb000,0x200,mapi=1)
+      Cmds+=data
       while data:
         data=fp.read(1024)
         Cmds+=data
@@ -186,6 +189,7 @@ class Fuzzer(threading.Thread):
       print 'send last_one_cmds done'
     else:
       print 'Fuzzer:unknow type!'
+    self.loglistener.stop()
     print "Fuzzer Stopped!"
     # if self.sendCmd(IoMap(0xfeba0000,0x800))==None:
     #   exit(-1)
@@ -197,7 +201,6 @@ class Fuzzer(threading.Thread):
 
   def stop(self):
     print 'wanna stop fuzzer'
-    self.loglistener.stop()
     self.stopped=True
 
 class SocketServer(threading.Thread):

@@ -12,9 +12,9 @@ def WriteMem(offset,data,base=0,size=4,lock='u'):
   global Cmds
   Cmds+= lock+FormatCmd(size,base+3,offset,struct.pack("<I",data))
 
-def WriteCopy(offset,data,base=0,lock='u'):
+def WriteCopy(offset,len,data,base=0,lock='u'):
   global Cmds
-  Cmds+= lock+FormatCmd(0,base+6,offset,data)
+  Cmds+= lock+FormatCmd(0,base+6,offset,struct.pack("<I",len)+data)
 
 def Ri(max,min=0):
   return random.randint(min,max)

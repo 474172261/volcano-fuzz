@@ -65,7 +65,7 @@ def Usage():
 if __name__=="__main__":
   port=8088
   ip=None
-  runtype=0
+  runtype='0'
   try: 
     opts,args=getopt.getopt(sys.argv[1:],"i:p:t:")
     for o,a in opts:

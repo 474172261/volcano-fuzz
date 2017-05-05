@@ -33,7 +33,7 @@ void * mymalloc(int size){
 typedef struct {
   u8 type;
   u32 addr;
-  u32 senddata;
+  u32 value;
 } GNUC_PACKED ioheader;
 
 #define writeMem(Base) do{\
@@ -41,15 +41,15 @@ typedef struct {
     switch(head->type&0xf0){\
       case 0x10:\
         if(DEBUG)\
-          printk("ioMaddr:%p,data:%8x\n",head->addr+Base,head->senddata);\
+          printk("ioMaddr:%p,data:%8x\n",head->addr+Base,head->value);\
         else\
-          writeb(head->senddata,head->addr+Base);\
+          writeb(head->value,head->addr+Base);\
         break;\
       case 0x40:\
         if(DEBUG)\
-          printk("ioMaddr:%p,data:%8x\n",head->addr+Base,head->senddata);\
+          printk("ioMaddr:%p,data:%8x\n",head->addr+Base,head->value);\
         else\
-          writel(head->senddata,head->addr+Base);\
+          writel(head->value,head->addr+Base);\
         break;\
       default:\
         printk("Error:unhandle Memlen:%x!\n",head->type&0xf0);\
@@ -62,15 +62,15 @@ typedef struct {
   switch(head->type&0xf0){\
     case 0x10:\
       if(DEBUG)\
-        printk("iobaddr:%8x,data:%x\n",head->addr,head->senddata);\
+        printk("iobaddr:%8x,data:%x\n",head->addr,head->value);\
       else\
-        outb(head->senddata,head->addr);\
+        outb(head->value,head->addr);\
       break;\
     case 0x40:\
       if(DEBUG)\
-        printk("ioladdr:%8x,data:%8x\n",head->addr,head->senddata);\
+        printk("ioladdr:%8x,data:%8x\n",head->addr,head->value);\
       else\
-        outl(head->senddata,head->addr);\
+        outl(head->value,head->addr);\
       break;\
     default:\
       printk("Error:unhandle Portlen,%x!\n",head->type&0xf0);\
@@ -80,14 +80,15 @@ typedef struct {
 
 #define writeCopy(Base) do{\
   if(Base){\
-    int *mem=(int *)mymalloc(len-5);\
+    int length= head->value>len-5 ? len-5:head->value;\
+    int *mem=(int *)mymalloc(length);\
     if(!mem){\
       printk("Error:alloc temp mem fail\n");\
       return -EFAULT;\
     }\
-    memcpy(mem,&head->senddata,len-5);\
+    memcpy(mem,&head[1],length);\
     if(DEBUG)\
-      printk("ioCopy addr:%8x,data:%8x,len:%x\n",head->addr+Base,head->senddata,len-5);\
+      printk("ioCopy addr:%8x,data:%8x,len:%x\n",head->addr+Base,head->value,length);\
     else\
       writel(virt_to_phys(mem),head->addr+Base);\
   }\
@@ -116,7 +117,7 @@ ssize_t writeCallback( struct file *filp,const char __user *buff,unsigned long l
   ioheader *head=(ioheader *)userdata;
   if(DEBUG>1){
     printk("type:%02x,size:%02x\n",head->type&0xf,head->type&0xf0);
-    printk("addr:%08x,data:%08x\n",head->addr,head->senddata);
+    printk("addr:%08x,data:%08x\n",head->addr,head->value);
   }
   switch(head->type&0xf){// IOport
     case 0:
@@ -139,11 +140,11 @@ ssize_t writeCallback( struct file *filp,const char __user *buff,unsigned long l
         printk("Error:bad num %d.\n",temp);
         return -1;
       }
-      mapBase[temp]=(u64)ioremap(head->addr,head->senddata);
+      mapBase[temp]=(u64)ioremap(head->addr,head->value);
       printk("map:0x%8x result:%llx\n",head->addr,mapBase[temp]);
       break;
     case 0xb:
-    
+
     default:
       printk("Error:bad case!\n");
       return -1;
