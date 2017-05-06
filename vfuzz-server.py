@@ -28,91 +28,29 @@ def WriteCopy(offset,len,data,base=0,lock='u'):
   global Cmds
   Cmds+= lock+FormatCmd(0,base+6,offset,struct.pack("<I",len)+data)
 
-def Ri(max,min=0):
-  return random.randint(min,max)
-
-def bitFlip(isdata=False):
-  len_cmd=len(Cmds)
-  if isdata:
-    pos=Ri(len_cmd)
-    bit=1<<(Ri(32))
-    flip=ord(Cmds[pos:pos+1])^bit
-    Cmds=Cmds[:pos]+flip+Cmd[pos+1:]
-  else:
-    if len_cmd%10:
-      print "Error:wrong cmd align for bitFlip!"
-    pos=Ri(len_cmd/10)
-    while Cmds[pos*10:pos*10+1]=='l':
-      pos=0 if pos-1<0 else pos-1
-      print 'lock check:',pos
-      pos=Ri(len_cmd/10)
-
-    intval=struct.unpack('<I',Cmds[pos*10+6:pos*10+10])[0]
-    bit=1<<(Ri(32))
-    flip=intval^bit
-    flip=struct.pack('<I',flip)
-    Cmds=Cmds[:pos*10+6]+flip+Cmds[pos*10+10:]
-
-def byteCopies(isdata=False):
-  len_cmd=len(Cmds)
-  if isdata:
-    pos=Ri(len_cmd)
-    len_copy= Ri(len_cmd)
-    copy=Cmds[pos:len_copy+pos]
-  else:
-    if len_cmd%10:
-      print "Error:wrong cmd align for byteCopies!"
-    pos=Ri(len_cmd/10)
-    print pos
-    len_copy=Ri(len_cmd/10-pos)
-    copy=Cmds[pos*10:pos*10+len_copy*10]# copy some len
-  Cmds+=copy
-
-def byteRemovals(isdata=False):
-  len_cmd=len(Cmds)
-  if isdata:
-    pos=Ri(len_cmd)
-    print len_cmd
-    len_remove=Ri(int(len_cmd*0.1))# 移除的数据最多占10%
-    Cmds=Cmds[:pos]+Cmds[pos+len_remove:]
-  else:
-    if len_cmd%10:
-      print "Error:wrong cmd align for byteRemovals!"
-    print len_cmd
-    pos=Ri(len_cmd/10)
-    len_remove=Ri(int(len_cmd*0.1))# 移除的命令最多占10%
-    Cmds=Cmds[:pos*10]+Cmds[pos*10+len_remove*10:]
-
 class Fuzzer(threading.Thread):
-  def __init__(self,id,c=None,runtype=0):
+  def __init__(self,id,c=None,runtype=0,dbg=None):
     super(Fuzzer, self).__init__()
     self.client=c
     self.stopped=False
     self.client_id=id
     self.loglistener=checkpoint_analyze.LogListener(runtype)
     self.runtype=runtype
+    self.dbg=dbg
 #TYPE={"RUNFUZZER":0,"RUNEXAMPLE":1}
 
   def sendCmd(self,data):
     try:
       self.client.sendall(data)
-      self.client.recv(1)
-    except socket.error:
-      print 'sendCmd fail!\nclose thread %d'%(self.client_id)
-      print 'Fuzzer exit!'
+      self.client.recv(1)# recieve \xcc
+    except socket.timeout:
       self.loglistener.stop()
+      print 'socket error!\nQEMU is in an infinite loop now.\nclose thread %d'%(self.client_id)
+      self.dbg.stop()
       self.client.close()
+      print 'Fuzzer exit!'
       exit(-1)
 
-  def mutator(self):
-    bitFlip()
-    posb=Ri(100)
-    if posb<30:
-      byteCopies()
-    posb=Ri(100)
-    if posb<20:
-      byteRemovals()
-    
   def sendCmds(self):
     global Cmds
     if len(Cmds)%10:
@@ -122,30 +60,6 @@ class Fuzzer(threading.Thread):
     for i in range(len(Cmds)/10):
       cmd=Cmds[i*10+1:i*10+10]
       self.sendCmd(cmd)
-
-  def initCmd(self):
-    global Cmds
-    Cmds=''
-    ret=IoMap(0xfebf0000,0x800)
-    if ret==None:
-      pass
-    cmd_sizes=(0,0,0,132,0,3,4,6,34)
-    for i in range(9):
-      WriteMem(0,i,base=0,size=4,lock='l')
-      for i in range(cmd_sizes[i]):
-        WriteMem(4,randInt());
-    while True:
-      self.mutator()
-      self.sendCmds()
-
-  def pvscsiPoc(self):
-    global Cmds
-    Cmds=""
-    IoMap(0xfebf0000,0x800)
-    WriteMem(0,3)
-    for i in range(132):
-      WriteMem(4,0xffffffff)
-    self.sendCmds()
 
   def storeCmds(self):
     fp=open('last_one_cmds','wb')
@@ -214,6 +128,8 @@ class SocketServer(threading.Thread):
     self.stopped=False
 
   def run(self):
+    dbg=Debugger(memsize, imgpath, cmd)
+    dbg.start()
     self.server=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
     try:
       self.server.bind(('',self.port))
@@ -231,10 +147,13 @@ class SocketServer(threading.Thread):
         continue  
       print 'accept a fuzzer at port %d'%(addr[1])
       runtype=client.recv(1)
-      fuzzer=Fuzzer(ids,client,int(runtype))
+      client.settimeout(3)
+      fuzzer=Fuzzer(ids,client,int(runtype),dbg)
       ids+=1
       self.clients.append(fuzzer)
       fuzzer.start()
+    if dbg.isAlive():
+      dbg.stop()
     print "Server stopped"
 
   def stop(self):
@@ -252,9 +171,9 @@ def GetQemuPid():
       print "No process"
       break
     t=i.split()[3]
-    if not pid_in_use.has_key(t):
+    if not pid_in_use.count(t):
       pid=t
-      pid_in_use[t]=1
+      pid_in_use.append(pid)
       break
   if(p.poll()==None):
     p.kill()
@@ -268,7 +187,7 @@ class Debugger(threading.Thread):
     self.cmd=cmd 
 
   def run(self):
-    print "qemu-system-x86_64 --enable-kvm"+" -m "+self.memsize+" -hda "+self.imgpath+" "+self.cmd+'\n'
+    print "qemu-system-x86_64 --enable-kvm"+" -m "+self.memsize+" -hda "+self.imgpath+" "+self.cmd
     qemu=Popen("qemu-system-x86_64 --enable-kvm"+" -m "+self.memsize+" -hda "+\
                 self.imgpath+" "+self.cmd,stdout=PIPE,stderr=STDOUT,shell=True)
     pid=GetQemuPid()
@@ -286,7 +205,7 @@ class Debugger(threading.Thread):
       -ex "q" \
       --pid """+pid+" 2>&1",stdout=PIPE,stderr=STDOUT,shell=True)
     debuginfo=qemuDbg.communicate()[0]
-    pid_in_use.pop(pid)
+    pid_in_use.remove(pid)
     print qemu.poll()
     if qemu.poll()==None:
       qemu.kill()
@@ -296,10 +215,18 @@ class Debugger(threading.Thread):
     print debuginfo[-30:]
     Quit()
     if debuginfo[-30:]=='The program is not being run.\n':
-      return -1
-    fp=open("crash-dump_"+time.strftime('%Y-%m-%d-%H:%M:%S',time.localtime(time.time())),'w+')
+      return 0
+    timer=time.strftime('%Y-%m-%d-%H:%M:%S',time.localtime(time.time()))
+    print "Get a crash-dump_"+timer
+    fp=open("crash-dump_"+timer,'w+')
     fp.write(debuginfo)
     fp.close()
+
+  def stop(self):
+    for i in pid_in_use:
+      print 'killed ',i
+      killer=Popen("kill -9 "+i,stdout=PIPE,stderr=STDOUT,shell=True)
+      killer.kill()
 
 def Quit():
   global QUIT
@@ -317,7 +244,7 @@ def Usage():
 NOGDB=False
 Cmds=""
 QUIT=False
-pid_in_use={}
+pid_in_use=[]
 if __name__=="__main__":
   memsize=''
   imgpath=''
@@ -349,8 +276,6 @@ if __name__=="__main__":
     Usage()
   server=SocketServer(port)
   server.start()
-  dbg=Debugger(memsize, imgpath, cmd)
-  dbg.start()
   try:
     while not QUIT:pass
   except KeyboardInterrupt:

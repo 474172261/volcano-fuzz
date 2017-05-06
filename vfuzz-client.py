@@ -22,9 +22,7 @@ class Accepter(threading.Thread):
     while not self.stopped:
       try:
         data=self.client.recv(1024)
-        if not data:
-          continue
-        self.client.send('\xff')
+        self.client.send('\xcc')
       except socket.timeout:
         continue 
       except:
@@ -47,7 +45,7 @@ def SocketClient(ipaddr,runtype,port):
     print 'Fail to connect %s!'%(ipaddr)
     c.close()
     exit(-1)
-  c.settimeout(0.2)
+  c.settimeout(0.1)
   c.send(runtype)
   thread=Accepter(c)
   thread.start()

@@ -16,6 +16,7 @@ class LogListener(threading.Thread):
     self.check_list={}
     self.timer=1
     self.runtype=runtype
+    self.delaytime=0.5
 
   def getCovScore(self):
     score='0'
@@ -72,7 +73,7 @@ class LogListener(threading.Thread):
     sock.bind(self.log_addr)
     sock.listen(1)
     sock.settimeout(0.1)
-    threading.Timer(2,self.timerPrintSocre).start()
+    threading.Timer(self.delaytime,self.timerPrintSocre).start()
     while not self.stopped:
       try:
         con,client_addr=sock.accept()
@@ -95,10 +96,10 @@ class LogListener(threading.Thread):
   def timerPrintSocre(self):
     if self.timer:
       self.timer+=1
-      sys.__stdout__.write('\rpre_score:'+self.pre_score[:-1]+',cur_score:'+self.score[:-1]+\
+      sys.__stdout__.write('\rcur_score:'+self.score[:-1]+\
         ' times:'+str(self.timer)+' ')
       sys.__stdout__.flush()
-      threading.Timer(2,self.timerPrintSocre).start()
+      threading.Timer(self.delaytime,self.timerPrintSocre).start()
 
   def getScore(self):
     self.getCovScore()
